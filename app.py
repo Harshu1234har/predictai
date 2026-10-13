@@ -1,661 +1,642 @@
-
 import os
-from pathlib import Path
+import io
+import json
+from datetime import datetime
 
 import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-from sklearn.metrics import ConfusionMatrixDisplay
 
-# =========================================================
-# PAGE CONFIGURATION
-# =========================================================
+# ============================================================
+# PredictAI — Machine Predictive Maintenance Dashboard
+# Uses the existing trained model and feature order.
+# Put these files in your GitHub repository:
+#   model/machine_failure_model.pkl
+#   model/type_encoder.pkl
+#   model/features.pkl
+# ============================================================
+
 st.set_page_config(
-    page_title="PredictAI | Predictive Maintenance",
+    page_title="PredictAI | Machine Mission Control",
     page_icon="⚙️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-BASE_DIR = Path(__file__).resolve().parent
+# ---------- Existing project settings ----------
+MODEL_PATH = "model/machine_failure_model.pkl"
+ENCODER_PATH = "model/type_encoder.pkl"
+FEATURES_PATH = "model/features.pkl"
 
-# =========================================================
-# COLORFUL UI
-# =========================================================
-st.markdown("""
-<style>
-.stApp {
-    background: linear-gradient(135deg, #f4f7ff 0%, #e8efff 100%);
-    color: #172554;
+FEATURES = [
+    "Air temperature [K]",
+    "Process temperature [K]",
+    "Rotational speed [rpm]",
+    "Torque [Nm]",
+    "Tool wear [min]",
+    "Type",
+]
+
+# These metrics match the original Google Colab confusion matrix below:
+# [[1927, 5], [30, 38]]. Update only if you want to show metrics
+# from a different evaluation run.
+MODEL_METRICS = {
+    "Accuracy": 98.25,
+    "Precision": 88.37,
+    "Recall": 55.88,
+    "F1 Score": 68.47,
 }
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #101d40 0%, #263f79 100%);
+CONFUSION_MATRIX = np.array([[1927, 5], [30, 38]])
+CLASS_NAMES = ["Normal", "Failure"]
+
+# Risk bands are dashboard labels, not certified safety thresholds.
+LOW_RISK_MAX = 0.30
+MEDIUM_RISK_MAX = 0.70
+FAILURE_DECISION_THRESHOLD = 0.50
+
+TYPE_TO_CODE_FALLBACK = {"H": 0, "L": 1, "M": 2}
+TYPE_EXAMPLES = {
+    "H": {
+        "air": 303.0, "process": 313.0, "rpm": 900,
+        "torque": 60.0, "wear": 240,
+        "note": "Example guidance only. It does not guarantee a failure prediction.",
+    },
+    "L": {
+        "air": 303.0, "process": 313.0, "rpm": 900,
+        "torque": 60.0, "wear": 240,
+        "note": "Example guidance only. It does not guarantee a failure prediction.",
+    },
+    "M": {
+        "air": 300.0, "process": 310.0, "rpm": 1400,
+        "torque": 45.0, "wear": 150,
+        "note": "Example guidance only. It does not guarantee a failure prediction.",
+    },
 }
-[data-testid="stSidebar"] * {
-    color: white !important;
-}
-.main-title {
-    font-size: 42px;
-    font-weight: 800;
-    color: #172e65;
-}
-.subtitle {
-    font-size: 17px;
-    color: #64748b;
-}
-.metric-card {
-    background: white;
-    padding: 20px;
-    border-radius: 15px;
-    border: 1px solid #dbe4f0;
-    box-shadow: 0 4px 14px rgba(31, 41, 55, 0.06);
-}
-div.stButton > button {
-    border-radius: 10px;
-    font-weight: 600;
-    min-height: 42px;
-}
-</style>
-""", unsafe_allow_html=True)
 
-# =========================================================
-# LOGIN
-# Demo fallback credentials: admin / admin123
-# For a real deployment, configure credentials in Streamlit
-# secrets instead of relying on demo credentials.
-# =========================================================
-try:
-    LOGIN_USERNAME = st.secrets["login"]["username"]
-    LOGIN_PASSWORD = st.secrets["login"]["password"]
-except Exception:
-    LOGIN_USERNAME = os.getenv("PREDICTAI_USERNAME", "admin")
-    LOGIN_PASSWORD = os.getenv("PREDICTAI_PASSWORD", "admin123")
+# ---------- Styling ----------
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+    :root { --navy:#101c3a; --blue:#4776e6; --cyan:#31c7d5; }
+    html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
+    .stApp {
+      background:
+        radial-gradient(circle at 85% 0%, rgba(49,199,213,.12), transparent 27%),
+        linear-gradient(135deg, #f5f8ff 0%, #f7fbff 55%, #eef5ff 100%);
+    }
+    h1, h2, h3 { font-family: 'Space Grotesk', sans-serif !important; color:#101c3a; }
+    [data-testid="stSidebar"] { background:linear-gradient(180deg,#101c3a,#182b53); }
+    [data-testid="stSidebar"] * { color:#f2f6ff !important; }
+    [data-testid="stSidebar"] .stRadio label { background:rgba(255,255,255,.06); padding:9px 12px; border-radius:10px; }
+    .hero {
+      padding: 24px 28px; border-radius: 22px; color: white;
+      background: linear-gradient(115deg,#101c3a 0%,#244a91 62%,#31a9c5 120%);
+      box-shadow: 0 12px 35px rgba(25,55,110,.15); margin-bottom: 18px;
+    }
+    .hero h1 { color:white !important; margin:0; font-size:2.15rem; }
+    .hero p { color:#dce8ff; margin:.45rem 0 0 0; }
+    .metric-card {
+      background:rgba(255,255,255,.88); border:1px solid #e1e9f7;
+      padding:17px 18px; border-radius:16px; min-height:110px;
+      box-shadow:0 5px 18px rgba(30,60,110,.05);
+    }
+    .metric-label { color:#61708b; font-size:.82rem; font-weight:600; }
+    .metric-value { color:#101c3a; font-family:'Space Grotesk'; font-size:1.75rem; font-weight:700; margin-top:6px; }
+    .metric-sub { color:#7a879d; font-size:.75rem; margin-top:2px; }
+    .section-card { background:rgba(255,255,255,.85); border:1px solid #e1e9f7; padding:18px; border-radius:18px; }
+    .status-pill { display:inline-block; padding:5px 10px; border-radius:999px; font-weight:700; font-size:.8rem; }
+    .green { background:#dcfce7; color:#166534; }
+    .orange { background:#ffedd5; color:#9a3412; }
+    .red { background:#fee2e2; color:#991b1b; }
+    .blue { background:#dbeafe; color:#1d4ed8; }
+    .small-muted { color:#697891; font-size:.86rem; }
+    div[data-testid="stMetric"] { background:white; border:1px solid #e3eaf6; padding:12px 14px; border-radius:14px; }
+    div.stButton > button { border-radius:11px; font-weight:700; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if not st.session_state.logged_in:
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    left, center, right = st.columns([1, 1.2, 1])
-
-    with center:
-        st.markdown(
-            "<h1 style='text-align:center;color:#172e65;'>⚙️ PredictAI</h1>",
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            "<p style='text-align:center;'>Smart Machine Monitoring "
-            "and Failure Prediction</p>",
-            unsafe_allow_html=True
-        )
-
-        with st.form("login_form"):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button(
-                "Login", use_container_width=True
-            )
-
-        if submitted:
-            if (
-                username == LOGIN_USERNAME
-                and password == LOGIN_PASSWORD
-            ):
-                st.session_state.logged_in = True
-                st.rerun()
-            else:
-                st.error("Incorrect username or password.")
-
-        st.caption(
-            "Demo fallback login: admin / admin123. "
-            "Change this before using the app for anything private."
-        )
-
-    st.stop()
-
-# =========================================================
-# LOAD SAVED MODEL FILES
-# =========================================================
+# ---------- Load existing artifacts ----------
 @st.cache_resource
 def load_artifacts():
-    model_path = BASE_DIR / "machine_failure_model.pkl"
-    encoder_path = BASE_DIR / "type_encoder.pkl"
-    features_path = BASE_DIR / "features.pkl"
+    if not os.path.exists(MODEL_PATH):
+        return None, None, FEATURES, f"Model file not found: {MODEL_PATH}"
+    try:
+        model = joblib.load(MODEL_PATH)
+        encoder = joblib.load(ENCODER_PATH) if os.path.exists(ENCODER_PATH) else None
+        features = joblib.load(FEATURES_PATH) if os.path.exists(FEATURES_PATH) else FEATURES
+        return model, encoder, list(features), None
+    except Exception as exc:
+        return None, None, FEATURES, str(exc)
 
-    for path in [model_path, encoder_path, features_path]:
-        if not path.exists():
-            raise FileNotFoundError(
-                f"Required file is missing: {path.name}"
-            )
+model, type_encoder, model_features, load_error = load_artifacts()
 
-    model = joblib.load(model_path)
-    encoder = joblib.load(encoder_path)
-    features = joblib.load(features_path)
+# Use the saved encoder when available; fallback matches the original Colab mapping.
+def encode_type(machine_type):
+    if type_encoder is not None:
+        try:
+            return int(type_encoder.transform([machine_type])[0])
+        except Exception:
+            pass
+    return TYPE_TO_CODE_FALLBACK[machine_type]
 
-    return model, encoder, features
+def get_failure_probability(row_df):
+    """Return model probability for Machine failure class 1."""
+    if model is None:
+        return None
+    if hasattr(model, "predict_proba"):
+        probs = model.predict_proba(row_df)[0]
+        classes = list(getattr(model, "classes_", range(len(probs))))
+        if 1 in classes:
+            return float(probs[classes.index(1)])
+        return float(probs[-1])
+    return float(model.predict(row_df)[0])
 
+def risk_band(probability):
+    if probability < LOW_RISK_MAX:
+        return "LOW", "green"
+    if probability < MEDIUM_RISK_MAX:
+        return "MEDIUM", "orange"
+    return "HIGH", "red"
 
-try:
-    model, encoder, features = load_artifacts()
-except Exception as error:
-    st.error(f"Could not load the ML model: {error}")
-    st.info(
-        "Check that all three .pkl files are uploaded to the "
-        "same GitHub folder as app.py."
+def explain_prediction(probability, machine_type, air, process, rpm, torque, wear):
+    """A transparent, local explanation; no external AI service is required."""
+    band, _ = risk_band(probability)
+    notes = []
+    if torque >= 50:
+        notes.append("torque is relatively high")
+    if rpm < 1000:
+        notes.append("rotational speed is relatively low")
+    elif rpm > 2000:
+        notes.append("rotational speed is relatively high")
+    if wear >= 200:
+        notes.append("tool wear is high")
+    if process - air < 8:
+        notes.append("the air/process temperature gap is small")
+    if not notes:
+        notes.append("the entered values do not cross the simple sensor heuristics used for this explanation")
+    outcome = "failure is predicted" if probability >= FAILURE_DECISION_THRESHOLD else "normal operation is predicted"
+    return (
+        f"The model estimates a **{probability:.1%}** failure probability, so the dashboard labels this "
+        f"as **{band.lower()} risk**. Using the separate classification cutoff of "
+        f"{FAILURE_DECISION_THRESHOLD:.0%}, **{outcome}**. "
+        f"Sensor observations: {', '.join(notes)}. Machine type: **{machine_type}**. "
+        "These observations are guidance, not proof of causation; the prediction comes from the trained model."
     )
-    st.stop()
 
-# =========================================================
-# SAVED EVALUATION RESULTS
-# From your earlier evaluation:
-# [[1927, 5],
-#  [30, 38]]
-# These are recorded evaluation results, not recalculated
-# against a test set every time the app opens.
-# =========================================================
-CONFUSION_MATRIX = np.array([
-    [1927, 5],
-    [30, 38]
-])
+# ---------- Session state ----------
+if "alerts" not in st.session_state:
+    st.session_state.alerts = []
+if "last_prediction" not in st.session_state:
+    st.session_state.last_prediction = None
+if "sim_result" not in st.session_state:
+    st.session_state.sim_result = None
 
-accuracy = (1927 + 38) / CONFUSION_MATRIX.sum()
-precision = 38 / (38 + 5)
-recall = 38 / (38 + 30)
-f1_score = 2 * precision * recall / (precision + recall)
+# ---------- Sidebar navigation ----------
+st.sidebar.markdown("## ⚙️ PredictAI")
+st.sidebar.caption("Predictive Maintenance • ML Control Center")
+page_options = [
+    "Overview", "Machine Prediction", "Factory Mission Control", "What-if Simulator",
+    "Model Performance", "Sensor Trends", "Alert History", "About Project",
+]
+requested_page = st.query_params.get("page", "Overview")
+if requested_page not in page_options:
+    requested_page = "Overview"
+page = st.sidebar.radio(
+    "NAVIGATION",
+    page_options,
+    index=page_options.index(requested_page),
+)
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Model status**")
+if model is not None:
+    st.sidebar.success("Trained model loaded")
+else:
+    st.sidebar.error("Model not loaded")
+st.sidebar.caption("Risk bands are demo thresholds, not certified safety limits.")
 
-# =========================================================
-# SIDEBAR NAVIGATION
-# =========================================================
-with st.sidebar:
-    st.markdown("# ⚙️ PredictAI")
-    st.caption("SMART MACHINE MONITORING")
-    st.divider()
-
-    page = st.radio(
-        "NAVIGATION",
-        [
-            "🏠 Dashboard",
-            "🔮 Machine Prediction",
-            "📊 Model Performance",
-            "🧠 Feature Importance",
-            "ℹ️ About Project"
-        ]
+def render_hero(title, subtitle, emoji="⚙️"):
+    st.markdown(
+        f'<div class="hero"><h1>{emoji} {title}</h1><p>{subtitle}</p></div>',
+        unsafe_allow_html=True,
     )
 
-    st.divider()
-    st.success("ML model loaded")
-    st.write("**Algorithm:** Random Forest")
-    st.write(f"**Input features:** {len(features)}")
+def metric_card(label, value, sub=""):
+    st.markdown(
+        f'<div class="metric-card"><div class="metric-label">{label}</div>'
+        f'<div class="metric-value">{value}</div><div class="metric-sub">{sub}</div></div>',
+        unsafe_allow_html=True,
+    )
 
-    if st.button("Logout", use_container_width=True):
-        st.session_state.logged_in = False
-        st.rerun()
-
-# =========================================================
-# COMMON FEATURE ORDER AND ENCODING
-# =========================================================
-def make_input_dataframe(
-    air_temp,
-    process_temp,
-    rpm,
-    torque,
-    tool_wear,
-    machine_type
-):
-    encoded_type = int(encoder.transform([machine_type])[0])
-
+def make_row(air, process, rpm, torque, wear, machine_type):
     values = {
-        "Air temperature [K]": float(air_temp),
-        "Process temperature [K]": float(process_temp),
+        "Air temperature [K]": float(air),
+        "Process temperature [K]": float(process),
         "Rotational speed [rpm]": float(rpm),
         "Torque [Nm]": float(torque),
-        "Tool wear [min]": float(tool_wear),
-        "Type": encoded_type
+        "Tool wear [min]": float(wear),
+        "Type": encode_type(machine_type),
     }
+    # Preserve the exact feature order used during training.
+    return pd.DataFrame([[values[f] for f in model_features]], columns=model_features)
 
-    # Keep exactly the feature order used to train the model.
-    return pd.DataFrame(
-        [[values[name] for name in features]],
-        columns=features
-    )
+def validate_inputs(air, process, rpm, torque, wear):
+    problems = []
+    if not (250 <= air <= 330): problems.append("Air temperature must be between 250 and 330 K.")
+    if not (250 <= process <= 350): problems.append("Process temperature must be between 250 and 350 K.")
+    if process <= air: problems.append("Process temperature should be higher than air temperature.")
+    if not (0 <= rpm <= 5000): problems.append("Rotational speed must be between 0 and 5000 rpm.")
+    if not (0 <= torque <= 100): problems.append("Torque must be between 0 and 100 Nm.")
+    if not (0 <= wear <= 300): problems.append("Tool wear must be between 0 and 300 min.")
+    return problems
 
-
-def get_failure_probability(input_df):
-    probabilities = model.predict_proba(input_df)[0]
-    classes = list(model.classes_)
-
-    if 1 not in classes:
-        return 0.0
-
-    return float(probabilities[classes.index(1)])
-
-
-# =========================================================
-# SEARCH FOR A MODEL-PREDICTED FAILURE EXAMPLE
-# Values are displayed as an example only. They are NOT
-# automatically copied into the user's input controls.
-# =========================================================
-def find_failure_example(machine_type, attempts=20000):
-    rng = np.random.default_rng(42)
-
-    # Approximate ranges from the AI4I 2020 dataset.
-    # These are for finding a demonstration example, not
-    # recommended operating limits for real machinery.
-    air = rng.uniform(295.3, 304.5, attempts)
-    process = rng.uniform(305.7, 313.8, attempts)
-    rpm = rng.integers(1168, 2887, attempts)
-    torque = rng.uniform(3.8, 76.6, attempts)
-    wear = rng.uniform(0, 253, attempts)
-
-    # Preserve the usual process-temperature relationship.
-    process = np.maximum(process, air + 1.0)
-    process = np.minimum(process, 313.8)
-
-    encoded_type = int(encoder.transform([machine_type])[0])
-
-    values = {
-        "Air temperature [K]": air,
-        "Process temperature [K]": process,
-        "Rotational speed [rpm]": rpm,
-        "Torque [Nm]": torque,
-        "Tool wear [min]": wear,
-        "Type": np.full(attempts, encoded_type)
-    }
-
-    candidates = pd.DataFrame(
-        {name: values[name] for name in features},
-        columns=features
-    )
-
-    predictions = model.predict(candidates)
-    failure_indices = np.flatnonzero(predictions == 1)
-
-    if len(failure_indices) == 0:
+def run_prediction(air, process, rpm, torque, wear, machine_type, machine_id="Machine"):
+    problems = validate_inputs(air, process, rpm, torque, wear)
+    if problems:
+        for problem in problems:
+            st.error(problem)
         return None
-
-    index = int(failure_indices[0])
-    probability = get_failure_probability(
-        candidates.iloc[[index]]
-    )
-
-    return {
-        "Air temperature (K)": round(float(air[index]), 2),
-        "Process temperature (K)": round(float(process[index]), 2),
-        "Rotational speed (rpm)": int(rpm[index]),
-        "Torque (Nm)": round(float(torque[index]), 2),
-        "Tool wear (min)": round(float(wear[index]), 2),
-        "Machine type": machine_type,
-        "Estimated failure probability": round(probability * 100, 2)
+    if model is None:
+        st.error("The trained model could not be loaded. Check the model files in your GitHub repository.")
+        return None
+    row = make_row(air, process, rpm, torque, wear, machine_type)
+    probability = get_failure_probability(row)
+    predicted_failure = probability >= FAILURE_DECISION_THRESHOLD
+    band, color = risk_band(probability)
+    result = {
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "machine_id": machine_id,
+        "machine_type": machine_type,
+        "air": float(air),
+        "process": float(process),
+        "rpm": int(rpm),
+        "torque": float(torque),
+        "wear": int(wear),
+        "probability": probability,
+        "prediction": "MACHINE FAILURE" if predicted_failure else "NORMAL",
+        "risk": band,
+        "risk_color": color,
+        "explanation": explain_prediction(probability, machine_type, air, process, rpm, torque, wear),
     }
+    st.session_state.last_prediction = result
+    st.session_state.alerts.insert(0, result)
+    st.session_state.alerts = st.session_state.alerts[:100]
+    return result
 
+def show_result(result):
+    if not result:
+        return
+    st.markdown("### Prediction result")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        metric_card("FAILURE PROBABILITY", f"{result['probability']:.2%}", "Model probability for failure class")
+    with c2:
+        metric_card("PREDICTED STATE", result["prediction"], f"Decision cutoff: {FAILURE_DECISION_THRESHOLD:.0%}")
+    with c3:
+        metric_card("RISK LEVEL", result["risk"], "Demo risk band")
+    st.progress(min(max(result["probability"], 0.0), 1.0), text=f"Estimated failure probability: {result['probability']:.1%}")
+    st.markdown(result["explanation"])
+    st.caption("Important: risk band and predicted state are different. For example, a 62.67% probability predicts failure at a 50% cutoff, while remaining MEDIUM risk under these dashboard bands.")
 
-# =========================================================
-# DASHBOARD PAGE
-# =========================================================
-if page == "🏠 Dashboard":
-    st.markdown(
-        '<div class="main-title">PredictAI Dashboard</div>',
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        '<div class="subtitle">AI-powered machine health monitoring '
-        'and failure prediction</div>',
-        unsafe_allow_html=True
-    )
-
-    st.write("")
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric("Accuracy", f"{accuracy * 100:.2f}%")
-    c2.metric("Precision", f"{precision * 100:.2f}%")
-    c3.metric("Recall", f"{recall * 100:.2f}%")
-    c4.metric("F1-score", f"{f1_score * 100:.2f}%")
-
-    st.divider()
-    st.subheader("📌 Project Overview")
-
-    a, b = st.columns(2)
-
-    with a:
-        st.markdown("### 🔮 Predict Machine Failure")
-        st.write(
-            "Enter the sensor readings and use the trained "
-            "Random Forest model to estimate machine failure."
-        )
-        st.markdown("### 📊 Model Performance")
-        st.write(
-            "Review the saved confusion matrix and the "
-            "Accuracy, Precision, Recall and F1-score."
-        )
-
-    with b:
-        st.markdown("### 🧠 Feature Importance")
-        st.write(
-            "Compare how much each input feature contributes "
-            "to the trained Random Forest model."
-        )
-        st.markdown("### 🛠️ Technology")
-        st.write(
-            "Python, Streamlit, Pandas, NumPy, Matplotlib "
-            "and Scikit-learn."
-        )
-
-    st.info(
-        "These metrics come from your earlier model evaluation. "
-        "They are not a guarantee of future real-world performance."
-    )
-
-# =========================================================
-# MACHINE PREDICTION PAGE
-# =========================================================
-elif page == "🔮 Machine Prediction":
-    st.title("🔮 Predict Machine Failure")
-    st.write(
-        "Select the machine type first. Enter the sensor readings "
-        "manually, then click Predict Failure Risk."
-    )
-
-    machine_type = st.selectbox(
-        "1. Select machine type",
-        options=["L", "M", "H"],
-        format_func=lambda x: {
-            "L": "L — Low type",
-            "M": "M — Medium type",
-            "H": "H — High type"
-        }[x],
-        key="machine_type"
-    )
-
-    st.caption(
-        "The machine type is selected first. The example search "
-        "below uses this selected type."
-    )
-
-    st.markdown("### Sensor readings")
-
-    left, right = st.columns(2)
-
-    with left:
-        air_temp = st.number_input(
-            "Air temperature (K)",
-            min_value=290.0,
-            max_value=310.0,
-            value=300.0,
-            step=0.1
-        )
-        process_temp = st.number_input(
-            "Process temperature (K)",
-            min_value=295.0,
-            max_value=320.0,
-            value=310.0,
-            step=0.1
-        )
-        rpm = st.number_input(
-            "Rotational speed (rpm)",
-            min_value=500,
-            max_value=4000,
-            value=1700,
-            step=10
-        )
-
-    with right:
-        torque = st.number_input(
-            "Torque (Nm)",
-            min_value=0.0,
-            max_value=100.0,
-            value=45.0,
-            step=0.5
-        )
-        tool_wear = st.number_input(
-            "Tool wear (min)",
-            min_value=0.0,
-            max_value=300.0,
-            value=150.0,
-            step=1.0
-        )
-
-    st.caption(
-        "The default numbers are starting values only. "
-        "They are not guaranteed low-, medium-, or high-risk settings."
-    )
-
-    predict_clicked = st.button(
-        "🚀 Predict Failure Risk",
-        type="primary",
-        use_container_width=True
-    )
-
-    if predict_clicked:
-        if process_temp <= air_temp:
-            st.warning(
-                "Process temperature is usually higher than air "
-                "temperature in this dataset. Check the readings."
-            )
-
-        input_df = make_input_dataframe(
-            air_temp,
-            process_temp,
-            rpm,
-            torque,
-            tool_wear,
-            machine_type
-        )
-
-        predicted_class = int(model.predict(input_df)[0])
-        probability = get_failure_probability(input_df)
-
-        if predicted_class == 1:
-            st.error("🚨 The model predicts MACHINE FAILURE.")
-        else:
-            st.success("✅ The model predicts NORMAL operation.")
-
-        st.subheader("📋 Prediction Result")
-
-        r1, r2 = st.columns(2)
-        r1.metric(
-            "Estimated failure probability",
-            f"{probability * 100:.2f}%"
-        )
-        r2.metric(
-            "Model prediction",
-            "FAILURE" if predicted_class == 1 else "NORMAL"
-        )
-
-        # Risk bands are illustrative probability bands, not
-        # industry-approved safety thresholds.
-        if probability < 0.30:
-            risk = "LOW"
-            st.success("Risk band: LOW")
-        elif probability < 0.70:
-            risk = "MEDIUM"
-            st.warning("Risk band: MEDIUM")
-        else:
-            risk = "HIGH"
-            st.error("Risk band: HIGH")
-
-        st.progress(min(max(probability, 0.0), 1.0))
-
-        st.caption(
-            "Risk bands are demo thresholds. The predicted class and "
-            "the estimated probability are different outputs, so "
-            "they may not always imply the same label. Do not use "
-            "this student project as the sole basis for safety decisions."
-        )
-
-        with st.expander("View the exact values submitted to the model"):
-            st.dataframe(input_df, use_container_width=True)
-
-    st.divider()
-    st.subheader("🧪 Need values that the model predicts as failure?")
-
-    st.write(
-        "Click below to search for one example for the selected "
-        "machine type. The app will display the values; it will "
-        "not change your input boxes. Copy them manually and click "
-        "Predict Failure Risk to test them."
-    )
-
-    if st.button(
-        "🔎 Find a Failure Example",
-        use_container_width=True
-    ):
-        with st.spinner("Searching for an example..."):
-            example = find_failure_example(machine_type)
-
-        if example is None:
-            st.warning(
-                "No failure example was found in this search. "
-                "Try another machine type or check your model."
-            )
-        else:
-            st.session_state["failure_example"] = example
-
-    example = st.session_state.get("failure_example")
-
-    if example and example["Machine type"] == machine_type:
-        st.success(
-            "Found a set of values that the saved model predicts as failure."
-        )
-        st.dataframe(
-            pd.DataFrame([example]),
-            use_container_width=True,
-            hide_index=True
-        )
-        st.info(
-            "Copy the five sensor values above into the input fields "
-            "manually. These are model-generated demonstration values, "
-            "not recommended real-machine operating settings."
-        )
-
-# =========================================================
-# MODEL PERFORMANCE PAGE
-# =========================================================
-elif page == "📊 Model Performance":
-    st.title("📊 Model Performance")
-    st.write("Saved evaluation results from your Random Forest model.")
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Accuracy", f"{accuracy * 100:.2f}%")
-    c2.metric("Precision", f"{precision * 100:.2f}%")
-    c3.metric("Recall", f"{recall * 100:.2f}%")
-    c4.metric("F1-score", f"{f1_score * 100:.2f}%")
-
-    st.divider()
-    st.subheader("Confusion Matrix — Random Forest")
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    display = ConfusionMatrixDisplay(
-        confusion_matrix=CONFUSION_MATRIX,
-        display_labels=["Normal", "Failure"]
-    )
-    display.plot(
-        ax=ax,
-        cmap="viridis",
-        colorbar=True,
-        values_format="d"
-    )
-    ax.set_title("Confusion Matrix - Random Forest")
-    fig.tight_layout()
-    st.pyplot(fig)
-    plt.close(fig)
-
-    st.markdown("""
-    **How to read this matrix:**
-    - **1927:** Normal machines correctly predicted as normal.
-    - **5:** Normal machines incorrectly predicted as failures.
-    - **30:** Failures missed by the model.
-    - **38:** Failures correctly predicted by the model.
-    """)
-
-    st.warning(
-        "Recall is 55.88% in this evaluation, so the model missed "
-        "30 of the 68 actual failures. High accuracy alone does not "
-        "mean that failure detection is reliable."
-    )
-
-# =========================================================
-# FEATURE IMPORTANCE PAGE
-# =========================================================
-elif page == "🧠 Feature Importance":
-    st.title("🧠 Feature Importance")
-    st.write(
-        "This graph shows the relative feature importance values "
-        "learned by the saved Random Forest model."
-    )
-
-    if hasattr(model, "feature_importances_"):
-        importance_values = model.feature_importances_
-        importance_names = list(features)
-
-        importance_df = pd.DataFrame({
-            "Feature": importance_names,
-            "Importance": importance_values
-        }).sort_values("Importance", ascending=True)
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.barh(
-            importance_df["Feature"],
-            importance_df["Importance"],
-            color="teal"
-        )
-        ax.set_title("Feature Importance - Random Forest")
-        ax.set_xlabel("Importance")
-        ax.set_ylabel("Features")
-        ax.grid(axis="x", linestyle="--", alpha=0.3)
-        fig.tight_layout()
-        st.pyplot(fig)
-        plt.close(fig)
-
-        st.dataframe(
-            importance_df.sort_values("Importance", ascending=False),
-            use_container_width=True,
-            hide_index=True
-        )
+# ---------- Pages ----------
+if page == "Overview":
+    render_hero("Machine Health Overview", "A clear view of machine condition, failure probability, and model performance.", "🛰️")
+    if load_error:
+        st.error(f"Model loading issue: {load_error}")
+        st.info("Check that the three model files are committed to the repository in the model/ folder.")
+    latest = st.session_state.last_prediction
+    if latest:
+        status = latest["prediction"]
+        prob = latest["probability"]
+        risk = latest["risk"]
     else:
-        st.error(
-            "This saved model does not expose feature_importances_."
-        )
+        status, prob, risk = "Awaiting input", 0.0, "—"
+    cols = st.columns(4)
+    with cols[0]: metric_card("MODEL", "Random Forest", "Existing trained model")
+    with cols[1]: metric_card("LAST PREDICTION", status, "Run a prediction to update")
+    with cols[2]: metric_card("FAILURE PROBABILITY", f"{prob:.1%}" if latest else "—", "Most recent prediction")
+    with cols[3]: metric_card("RISK BAND", risk, "Low <30% • Medium 30–70% • High ≥70%")
+    st.markdown("### Quick actions")
+    q1, q2, q3 = st.columns(3)
+    with q1:
+        st.markdown('<div class="section-card"><h3>🧪 Test a machine</h3><p class="small-muted">Enter sensor readings and estimate failure probability.</p></div>', unsafe_allow_html=True)
+        if st.button("Open Machine Prediction", use_container_width=True):
+            st.query_params["page"] = "Machine Prediction"
+            st.rerun()
+    with q2:
+        st.markdown('<div class="section-card"><h3>🏭 Mission Control</h3><p class="small-muted">Explore a simulated factory floor and machine states.</p></div>', unsafe_allow_html=True)
+        if st.button("Open Factory Map", use_container_width=True):
+            st.query_params["page"] = "Factory Mission Control"
+            st.rerun()
+    with q3:
+        st.markdown('<div class="section-card"><h3>📊 Model performance</h3><p class="small-muted">Review the same Colab evaluation metrics and confusion matrix.</p></div>', unsafe_allow_html=True)
+        if st.button("View Model Performance", use_container_width=True):
+            st.query_params["page"] = "Model Performance"
+            st.rerun()
+    st.markdown("### Evaluation snapshot")
+    m = st.columns(4)
+    for col, (name, val) in zip(m, MODEL_METRICS.items()):
+        with col: metric_card(name.upper(), f"{val:.2f}%", "Original Colab evaluation")
+    st.markdown("### How to read risk")
+    r1, r2, r3 = st.columns(3)
+    with r1: st.markdown('<div class="section-card"><span class="status-pill green">LOW • &lt;30%</span><p>Lower estimated failure probability. Continue normal monitoring.</p></div>', unsafe_allow_html=True)
+    with r2: st.markdown('<div class="section-card"><span class="status-pill orange">MEDIUM • 30–70%</span><p>Review sensor values and consider closer inspection.</p></div>', unsafe_allow_html=True)
+    with r3: st.markdown('<div class="section-card"><span class="status-pill red">HIGH • ≥70%</span><p>Prioritize inspection according to your maintenance procedure.</p></div>', unsafe_allow_html=True)
+    st.caption("The factory map and sample machines are a demonstration, not a live industrial monitoring connection.")
 
-    st.info(
-        "Feature importance indicates how the model uses features. "
-        "It does not prove that a feature causes machine failure."
-    )
+elif page == "Machine Prediction":
+    render_hero("Machine Prediction", "Enter real sensor readings. Example values are guidance only and do not auto-fill the form.", "🧪")
+    if model is None:
+        st.error(f"Model is not available. {load_error or ''}")
+    with st.form("prediction_form"):
+        machine_id = st.text_input("Machine ID", value="Machine-01")
+        machine_type = st.selectbox("Machine type", ["H", "L", "M"], index=2, help="The H/L/M encoding is preserved from your original model.")
+        ex = TYPE_EXAMPLES[machine_type]
+        st.info(f"**Example values for type {machine_type}:** Air {ex['air']} K • Process {ex['process']} K • RPM {ex['rpm']} • Torque {ex['torque']} Nm • Tool wear {ex['wear']} min. {ex['note']}")
+        st.markdown("#### Sensor readings")
+        a, b = st.columns(2)
+        with a:
+            air = st.number_input("Air temperature (K)", min_value=250.0, max_value=330.0, value=300.0, step=0.1)
+            rpm = st.number_input("Rotational speed (rpm)", min_value=0, max_value=5000, value=1400, step=10)
+            wear = st.number_input("Tool wear (min)", min_value=0, max_value=300, value=150, step=1)
+        with b:
+            process = st.number_input("Process temperature (K)", min_value=250.0, max_value=350.0, value=310.0, step=0.1)
+            torque = st.number_input("Torque (Nm)", min_value=0.0, max_value=100.0, value=45.0, step=0.5)
+        submitted = st.form_submit_button("🔍 Predict Machine Health", type="primary", use_container_width=True)
+    if submitted:
+        result = run_prediction(air, process, rpm, torque, wear, machine_type, machine_id.strip() or "Machine-01")
+        if result:
+            show_result(result)
+    elif st.session_state.last_prediction:
+        show_result(st.session_state.last_prediction)
 
-# =========================================================
-# ABOUT PAGE
-# =========================================================
-elif page == "ℹ️ About Project":
-    st.title("ℹ️ About PredictAI")
+elif page == "Factory Mission Control":
+    render_hero("Factory Mission Control", "Interactive-style overview of a sample factory floor. Select a machine to inspect its details.", "🏭")
+    st.info("This is a simulated factory map using sample readings. It is not connected to live factory sensors.")
+    sample_machines = [
+        {"id":"M-01","type":"M","air":300,"process":310,"rpm":1400,"torque":45,"wear":150,"x":0},
+        {"id":"M-02","type":"L","air":303,"process":313,"rpm":900,"torque":60,"wear":240,"x":1},
+        {"id":"M-03","type":"H","air":299,"process":309,"rpm":1500,"torque":35,"wear":80,"x":2},
+        {"id":"M-04","type":"M","air":301,"process":311,"rpm":1100,"torque":52,"wear":210,"x":3},
+        {"id":"M-05","type":"L","air":300,"process":310,"rpm":1700,"torque":30,"wear":40,"x":4},
+        {"id":"M-06","type":"H","air":302,"process":312,"rpm":950,"torque":58,"wear":230,"x":5},
+    ]
+    factory_results = []
+    if model is not None:
+        for item in sample_machines:
+            try:
+                row = make_row(item["air"], item["process"], item["rpm"], item["torque"], item["wear"], item["type"])
+                p = get_failure_probability(row)
+                band, color = risk_band(p)
+            except Exception:
+                p, band, color = 0.0, "LOW", "green"
+            item.update(probability=p, risk=band, color=color, prediction="MACHINE FAILURE" if p >= FAILURE_DECISION_THRESHOLD else "NORMAL")
+            factory_results.append(item)
+    else:
+        for item in sample_machines:
+            item.update(probability=0.0, risk="MODEL OFFLINE", color="blue", prediction="Not available")
+            factory_results.append(item)
+    legend = st.columns(3)
+    with legend[0]: st.markdown('<span class="status-pill green">● LOW RISK</span>', unsafe_allow_html=True)
+    with legend[1]: st.markdown('<span class="status-pill orange">● MEDIUM RISK</span>', unsafe_allow_html=True)
+    with legend[2]: st.markdown('<span class="status-pill red">● HIGH RISK</span>', unsafe_allow_html=True)
+    # A responsive grid of selectable machine tiles.
+    for start in range(0, len(factory_results), 3):
+        cols = st.columns(3)
+        for col, item in zip(cols, factory_results[start:start+3]):
+            with col:
+                icon = {"green":"🟢","orange":"🟠","red":"🔴","blue":"🔵"}.get(item["color"], "⚪")
+                st.markdown(
+                    f'<div class="section-card"><div style="font-size:1.8rem">{icon} ⚙️</div>'
+                    f'<h3>{item["id"]}</h3><p>Type {item["type"]} • {item["rpm"]} rpm</p>'
+                    f'<p><b>{item["risk"]}</b> risk • {item["probability"]:.1%}</p>'
+                    f'<p class="small-muted">{item["prediction"]}</p></div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button(f"Inspect {item['id']}", key=f"inspect_{item['id']}", use_container_width=True):
+                    st.session_state["selected_factory_machine"] = item["id"]
+    selected_id = st.session_state.get("selected_factory_machine", "M-01")
+    selected = next((m for m in factory_results if m["id"] == selected_id), factory_results[0])
+    st.markdown("---")
+    st.markdown(f"### Machine details: {selected['id']}")
+    d1, d2, d3, d4 = st.columns(4)
+    with d1: metric_card("AIR TEMP", f"{selected['air']} K")
+    with d2: metric_card("PROCESS TEMP", f"{selected['process']} K")
+    with d3: metric_card("TORQUE", f"{selected['torque']} Nm")
+    with d4: metric_card("TOOL WEAR", f"{selected['wear']} min")
+    st.write(f"**Model output:** {selected['prediction']} • **Failure probability:** {selected['probability']:.2%} • **Risk band:** {selected['risk']}")
+    if st.button("Add selected machine to alert history"):
+        record = {
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "machine_id": selected["id"],
+            "machine_type": selected["type"], "air": selected["air"], "process": selected["process"],
+            "rpm": selected["rpm"], "torque": selected["torque"], "wear": selected["wear"],
+            "probability": selected["probability"], "prediction": selected["prediction"],
+            "risk": selected["risk"], "risk_color": selected["color"],
+            "explanation": "Sample machine selected from the simulated factory map."
+        }
+        st.session_state.alerts.insert(0, record)
+        st.success("Added to alert history.")
 
+elif page == "What-if Simulator":
+    render_hero("What-if Risk Simulator", "Change one or more sensor readings and compare the model output. This does not alter the trained model.", "🎛️")
+    machine_type = st.selectbox("Machine type", ["H", "L", "M"], index=2, key="sim_type")
+    left, right = st.columns(2)
+    with left:
+        st.markdown("#### Baseline readings")
+        base_air = st.number_input("Baseline air temperature (K)", 250.0, 330.0, 300.0, 0.5, key="base_air")
+        base_process = st.number_input("Baseline process temperature (K)", 250.0, 350.0, 310.0, 0.5, key="base_process")
+        base_rpm = st.number_input("Baseline RPM", 0, 5000, 1400, 10, key="base_rpm")
+        base_torque = st.number_input("Baseline torque (Nm)", 0.0, 100.0, 45.0, 0.5, key="base_torque")
+        base_wear = st.number_input("Baseline tool wear (min)", 0, 300, 150, 1, key="base_wear")
+    with right:
+        st.markdown("#### Scenario adjustments")
+        delta_air = st.slider("Air temperature change (K)", -10.0, 10.0, 0.0, 0.5)
+        delta_process = st.slider("Process temperature change (K)", -10.0, 10.0, 0.0, 0.5)
+        delta_rpm = st.slider("RPM change", -1000, 1000, 0, 50)
+        delta_torque = st.slider("Torque change (Nm)", -30.0, 30.0, 0.0, 1.0)
+        delta_wear = st.slider("Tool wear change (min)", -100, 150, 0, 5)
+    scenario = {
+        "air": min(330.0, max(250.0, base_air + delta_air)),
+        "process": min(350.0, max(250.0, base_process + delta_process)),
+        "rpm": min(5000, max(0, base_rpm + delta_rpm)),
+        "torque": min(100.0, max(0.0, base_torque + delta_torque)),
+        "wear": min(300, max(0, base_wear + delta_wear)),
+    }
+    st.markdown("#### Scenario readings")
+    st.write(f"Air **{scenario['air']:.1f} K** · Process **{scenario['process']:.1f} K** · RPM **{scenario['rpm']}** · Torque **{scenario['torque']:.1f} Nm** · Wear **{scenario['wear']} min**")
+    if st.button("Run what-if simulation", type="primary", use_container_width=True):
+        base_problems = validate_inputs(base_air, base_process, base_rpm, base_torque, base_wear)
+        scenario_problems = validate_inputs(scenario["air"], scenario["process"], scenario["rpm"], scenario["torque"], scenario["wear"])
+        if base_problems or scenario_problems:
+            for p in base_problems + scenario_problems: st.error(p)
+        elif model is None:
+            st.error("Model is not loaded.")
+        else:
+            base_p = get_failure_probability(make_row(base_air, base_process, base_rpm, base_torque, base_wear, machine_type))
+            new_p = get_failure_probability(make_row(scenario["air"], scenario["process"], scenario["rpm"], scenario["torque"], scenario["wear"], machine_type))
+            diff = (new_p - base_p) * 100
+            st.session_state.sim_result = {"base":base_p, "new":new_p, "diff":diff, "scenario":scenario}
+    sim = st.session_state.sim_result
+    if sim:
+        c1, c2, c3 = st.columns(3)
+        with c1: metric_card("BASELINE PROBABILITY", f"{sim['base']:.2%}")
+        with c2: metric_card("SCENARIO PROBABILITY", f"{sim['new']:.2%}")
+        with c3: metric_card("CHANGE", f"{sim['diff']:+.2f} percentage points", "Scenario minus baseline")
+        fig, ax = plt.subplots(figsize=(7, 3))
+        ax.bar(["Baseline", "What-if scenario"], [sim["base"]*100, sim["new"]*100])
+        ax.set_ylabel("Failure probability (%)")
+        ax.set_ylim(0, 100)
+        ax.grid(axis="y", alpha=.25)
+        st.pyplot(fig, use_container_width=True)
+        plt.close(fig)
+        st.caption("This is a model-based scenario comparison, not a guarantee that changing a sensor will cause or prevent failure.")
+
+elif page == "Model Performance":
+    render_hero("Model Performance", "The same original Colab evaluation snapshot: Random Forest, six input features, and the original confusion matrix.", "📈")
+    st.info("Metrics below correspond to the original Colab confusion matrix. Keep these values aligned with the evaluation run you report in your project.")
+    cols = st.columns(4)
+    for col, (name, val) in zip(cols, MODEL_METRICS.items()):
+        with col: metric_card(name.upper(), f"{val:.2f}%", "Original Colab result")
+    st.markdown("### Confusion matrix")
+    fig, ax = plt.subplots(figsize=(6, 4))
+    im = ax.imshow(CONFUSION_MATRIX, interpolation="nearest")
+    ax.set_title("Confusion Matrix — Google Colab")
+    ax.set_xlabel("Predicted label")
+    ax.set_ylabel("Actual label")
+    ax.set_xticks([0, 1], CLASS_NAMES)
+    ax.set_yticks([0, 1], CLASS_NAMES)
+    for i in range(CONFUSION_MATRIX.shape[0]):
+        for j in range(CONFUSION_MATRIX.shape[1]):
+            ax.text(j, i, f"{CONFUSION_MATRIX[i, j]}", ha="center", va="center", fontsize=13)
+    fig.colorbar(im, ax=ax, fraction=.046, pad=.04)
+    st.pyplot(fig, use_container_width=False)
+    plt.close(fig)
+    st.caption("Rows = actual labels; columns = predicted labels. Normal is class 0 and Failure is class 1.")
+    st.markdown("### Feature importance")
+    if model is not None and hasattr(model, "feature_importances_"):
+        importances = np.asarray(model.feature_importances_)
+        names = list(model_features)
+        if len(importances) == len(names):
+            imp_df = pd.DataFrame({"Feature": names, "Importance": importances}).sort_values("Importance", ascending=True)
+            fig, ax = plt.subplots(figsize=(8, 4.5))
+            ax.barh(imp_df["Feature"], imp_df["Importance"])
+            ax.set_xlabel("Importance")
+            ax.set_title("Random Forest Feature Importance")
+            ax.grid(axis="x", alpha=.25)
+            st.pyplot(fig, use_container_width=True)
+            plt.close(fig)
+            st.dataframe(imp_df.sort_values("Importance", ascending=False).reset_index(drop=True), use_container_width=True, hide_index=True)
+        else:
+            st.warning("Feature importance count does not match the saved feature list.")
+    else:
+        st.warning("Feature importance is unavailable because the model is not loaded or does not expose feature_importances_.")
+    st.markdown("### What the metrics mean")
+    st.write("- **Accuracy:** percentage of all test cases classified correctly.")
+    st.write("- **Precision:** among predicted failures, the percentage that were actual failures.")
+    st.write("- **Recall:** among actual failures, the percentage detected by the model.")
+    st.write("- **F1 score:** balance between precision and recall.")
+    st.caption("Failure cases are rare in this dataset, so accuracy alone is not enough to judge performance.")
+
+elif page == "Sensor Trends":
+    render_hero("Sensor Trends", "Explore sample sensor readings and compare distributions. Upload your own CSV to explore your dataset.", "📉")
+    uploaded = st.file_uploader("Optional: upload a CSV containing sensor columns", type=["csv"])
+    if uploaded is not None:
+        try:
+            trend_df = pd.read_csv(uploaded)
+        except Exception as exc:
+            st.error(f"Could not read CSV: {exc}")
+            trend_df = pd.DataFrame()
+    else:
+        rng = np.random.default_rng(42)
+        n = 80
+        air_vals = rng.normal(300, 2, n)
+        process_vals = air_vals + rng.normal(10, 1.5, n)
+        trend_df = pd.DataFrame({
+            "Sample": np.arange(1, n+1),
+            "Air temperature [K]": air_vals,
+            "Process temperature [K]": process_vals,
+            "Rotational speed [rpm]": rng.normal(1500, 180, n).clip(500, 3000),
+            "Torque [Nm]": rng.normal(40, 10, n).clip(5, 80),
+            "Tool wear [min]": np.sort(rng.integers(0, 300, n)),
+        })
+        st.caption("Showing synthetic sample trends. They are for UI demonstration only, not real machine readings.")
+    available = [f for f in FEATURES[:-1] if f in trend_df.columns]
+    if available:
+        selected_sensor = st.selectbox("Choose a sensor", available)
+        if "Sample" not in trend_df.columns:
+            trend_df = trend_df.copy()
+            trend_df["Sample"] = np.arange(1, len(trend_df)+1)
+        fig, ax = plt.subplots(figsize=(9, 3.8))
+        ax.plot(trend_df["Sample"], trend_df[selected_sensor], marker=".", linewidth=1.5)
+        ax.set_title(selected_sensor)
+        ax.set_xlabel("Sample / row")
+        ax.set_ylabel(selected_sensor)
+        ax.grid(alpha=.25)
+        st.pyplot(fig, use_container_width=True)
+        plt.close(fig)
+        stat_cols = st.columns(3)
+        with stat_cols[0]: metric_card("AVERAGE", f"{pd.to_numeric(trend_df[selected_sensor], errors='coerce').mean():.2f}")
+        with stat_cols[1]: metric_card("MINIMUM", f"{pd.to_numeric(trend_df[selected_sensor], errors='coerce').min():.2f}")
+        with stat_cols[2]: metric_card("MAXIMUM", f"{pd.to_numeric(trend_df[selected_sensor], errors='coerce').max():.2f}")
+        st.dataframe(trend_df.head(20), use_container_width=True)
+    else:
+        st.warning("The uploaded CSV does not contain any expected sensor column names.")
+
+elif page == "Alert History":
+    render_hero("Alert History & Reports", "Review predictions generated in this app session and download a CSV report.", "🔔")
+    if not st.session_state.alerts:
+        st.info("No predictions recorded yet. Run a prediction or add a sample machine from Mission Control.")
+    else:
+        alerts_df = pd.DataFrame(st.session_state.alerts)
+        preferred = ["time","machine_id","machine_type","prediction","probability","risk","air","process","rpm","torque","wear"]
+        alerts_df = alerts_df[[c for c in preferred if c in alerts_df.columns]]
+        st.dataframe(alerts_df, use_container_width=True, hide_index=True)
+        csv_bytes = alerts_df.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Download alert history (CSV)", data=csv_bytes, file_name="predictai_alert_history.csv", mime="text/csv", use_container_width=True)
+        report = {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "model": "Random Forest",
+            "record_count": len(alerts_df),
+            "alerts": st.session_state.alerts,
+        }
+        st.download_button("⬇️ Download report (JSON)", data=json.dumps(report, indent=2).encode("utf-8"), file_name="predictai_report.json", mime="application/json", use_container_width=True)
+        if st.button("Clear session alert history"):
+            st.session_state.alerts = []
+            st.rerun()
+    st.caption("Alert history is stored only for the current Streamlit session; it is not a permanent database.")
+
+elif page == "About Project":
+    render_hero("About PredictAI", "A student machine-learning project for predictive maintenance.", "💡")
     st.markdown("""
-    ### Project
-    **AI-Based Predictive Maintenance System**
-
-    ### Objective
-    Predict possible machine failures from sensor readings so that
-    maintenance teams can investigate potential problems earlier.
-
-    ### Machine input features
+    ### Project summary
+    PredictAI uses your existing Random Forest classifier to estimate machine-failure probability from six features:
     - Air temperature (K)
     - Process temperature (K)
     - Rotational speed (rpm)
     - Torque (Nm)
     - Tool wear (min)
-    - Machine type (L, M, H)
+    - Machine type (H, L, M)
 
-    ### Technology stack
-    - Python
-    - Streamlit
-    - Pandas and NumPy
-    - Scikit-learn Random Forest
-    - Matplotlib
-    - Joblib
+    ### How the dashboard works
+    1. Enter sensor values.
+    2. The saved model estimates failure probability.
+    3. The model prediction uses a 50% decision cutoff.
+    4. The dashboard separately labels risk as Low (<30%), Medium (30% to <70%), or High (≥70%).
+    5. The explanation describes the result in plain language, and the report page lets you export session alerts.
 
-    ### Important limitation
-    This is an educational predictive-maintenance application.
-    Model probabilities, risk bands and predictions are not a
-    substitute for industrial inspection, maintenance procedures,
-    or safety systems.
+    ### Important limitations
+    - The Mission Control map and default trends use sample/synthetic data.
+    - The model only works with the same feature order and type encoding used during training.
+    - Risk cutoffs are demonstration choices, not official safety standards.
+    - Predictions support learning and should not replace inspection or a qualified maintenance process.
     """)
+    st.markdown("### Model files")
+    st.code("model/machine_failure_model.pkl\nmodel/type_encoder.pkl\nmodel/features.pkl")
+
+# Small footer
+st.markdown("---")
+st.caption("PredictAI • Student ML project • Predictions are estimates, not a guarantee of machine condition.")
