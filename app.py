@@ -58,12 +58,19 @@ if not st.session_state.predictai_authenticated:
       min-height: min(76vh, 700px); height:auto; border:1px solid rgba(0,210,255,.55);
       border-radius:24px; overflow:hidden; padding:clamp(24px,4vw,56px) clamp(20px,3vw,42px);
       background:
-        radial-gradient(ellipse at 62% 68%, rgba(0,210,255,.26), transparent 35%),
-        radial-gradient(ellipse at 25% 78%, rgba(0,103,255,.28), transparent 38%),
-        linear-gradient(150deg, rgba(3,20,47,.93), rgba(2,12,33,.98));
-      box-shadow: inset 0 0 70px rgba(0,157,255,.09), 0 18px 55px rgba(0,0,0,.22);
-      position:relative;
+        radial-gradient(ellipse at 68% 67%, rgba(0,225,255,.28), transparent 30%),
+        radial-gradient(ellipse at 23% 78%, rgba(0,103,255,.30), transparent 42%),
+        linear-gradient(150deg, #03142f 0%, #041a3c 54%, #020d22 100%);
+      box-shadow: inset 0 0 70px rgba(0,157,255,.12), 0 18px 55px rgba(0,0,0,.22);
+      position:relative; isolation:isolate;
     }
+    .factory-art {
+      position:absolute; inset:30% 0 0 0; z-index:-1; opacity:.96; pointer-events:none;
+      background:linear-gradient(180deg,transparent 0%,rgba(0,15,39,.05) 28%,rgba(0,12,32,.2) 100%);
+    }
+    .factory-art svg { width:100%; height:100%; display:block; }
+    .login-tagline { color:#8eeeff; font-size:clamp(.78rem,1.3vw,1rem); letter-spacing:.18em; font-weight:600; margin-top:16px; position:relative; z-index:2; }
+    .st-key-login_left_panel h1 { text-shadow:0 0 28px rgba(0,211,255,.12); }
     .st-key-login_left_panel:before {
       content:""; position:absolute; left:-10%; right:-10%; bottom:7%; height:32%;
       background:repeating-linear-gradient(0deg, transparent 0 28px, rgba(0,201,255,.12) 29px 30px),
@@ -82,12 +89,16 @@ if not st.session_state.predictai_authenticated:
     .st-key-login_right_panel h2 { color:#f4f8ff !important; text-align:center; font-size:clamp(1.6rem,2.5vw,2.2rem); }
     .st-key-login_right_panel [data-testid="stForm"] { border:1px solid rgba(0,196,255,.48); border-radius:20px; padding:clamp(16px,2vw,28px); background:rgba(5,22,49,.88); box-shadow:0 12px 38px rgba(0,0,0,.25); }
     .st-key-login_right_panel [data-testid="stForm"] label { color:#f3f7ff !important; }
-    .st-key-login_right_panel [data-testid="stForm"] input { background:#102747; color:#fff; border:1px solid #147fc0; }
+    .st-key-login_right_panel [data-testid="stForm"] input { background:#102747 !important; color:#ffffff !important; border:1px solid #147fc0; }
+    .st-key-login_right_panel [data-testid="stForm"] input::placeholder { color:#b9cbe2 !important; opacity:1; }
+    .st-key-login_right_panel [data-testid="stForm"] [data-testid="InputInstructions"] { color:#a9bfdc !important; }
+    .st-key-login_right_panel [data-testid="stForm"] [data-testid="stTextInput"] p { color:#f3f7ff !important; }
     .st-key-login_right_panel [data-testid="stForm"] button[kind="primaryFormSubmit"] { background:linear-gradient(90deg,#247bff,#00d4e9); color:white; border:0; border-radius:10px; min-height:48px; font-weight:700; }
     .login-note { color:#a9bfdc; font-size:.82rem; line-height:1.6; text-align:center; }
     @media (max-width: 800px) {
       [data-testid="stMainBlockContainer"] { padding-left:1rem; padding-right:1rem; }
-      .st-key-login_left_panel { min-height:180px; padding:28px 22px; }
+      .st-key-login_left_panel { min-height:260px; padding:28px 22px; }
+      .factory-art { inset:34% 0 0 0; }
       .st-key-login_left_panel:after { width:100px; height:100px; right:7%; bottom:12%; }
       .st-key-login_right_panel { min-height:auto; padding:18px 0 8px; }
     }
@@ -97,7 +108,47 @@ if not st.session_state.predictai_authenticated:
     left, right = st.columns([1.05, 0.95], gap="large", vertical_alignment="center")
     with left:
         with st.container(key="login_left_panel"):
-            st.markdown('<h1>Predict<span>AI</span></h1>', unsafe_allow_html=True)
+            st.markdown('''
+            <div class="factory-art" aria-hidden="true">
+              <svg viewBox="0 0 760 520" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="floorGlow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#008cff" stop-opacity="0"/><stop offset="1" stop-color="#00d9ff" stop-opacity=".28"/></linearGradient>
+                  <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#4f789e"/><stop offset=".5" stop-color="#102b4b"/><stop offset="1" stop-color="#06152d"/></linearGradient>
+                  <filter id="glow"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                </defs>
+                <path d="M0 315 L760 245 L760 520 L0 520Z" fill="url(#floorGlow)"/>
+                <g stroke="#00bfff" stroke-opacity=".2" stroke-width="1" fill="none">
+                  <path d="M0 360 L760 300 M0 400 L760 355 M0 450 L760 415 M0 500 L760 480"/>
+                  <path d="M70 520 L330 300 M180 520 L365 295 M300 520 L410 285 M430 520 L460 280 M570 520 L510 270 M700 520 L560 260"/>
+                </g>
+                <g opacity=".68" stroke="#087fbd" fill="#09284a">
+                  <path d="M360 150 L360 300 L390 290 L390 140Z"/><path d="M405 125 L405 285 L435 278 L435 115Z"/>
+                  <path d="M450 165 L450 275 L480 268 L480 155Z"/><path d="M505 135 L505 260 L535 255 L535 130Z"/>
+                  <path d="M370 170 L540 150 M370 210 L540 190 M370 250 L540 230" fill="none" stroke="#00cfff"/>
+                </g>
+                <g filter="url(#glow)" stroke="#00cfff" stroke-width="3" fill="none" opacity=".88">
+                  <rect x="410" y="165" width="118" height="62" rx="5"/><path d="M420 212 L440 198 L456 204 L473 180 L490 190 L517 174"/>
+                  <rect x="548" y="185" width="104" height="83" rx="5"/><path d="M560 250 L560 225 L576 225 L576 210 L593 210 L593 232 L611 232 L611 201 L628 201 L628 250Z"/>
+                  <circle cx="460" cy="280" r="29"/><path d="M460 280 L460 257 M460 280 L480 292"/>
+                </g>
+                <!-- robotic arm -->
+                <g stroke-linecap="round" stroke-linejoin="round">
+                  <ellipse cx="215" cy="425" rx="115" ry="23" fill="#020b1d" stroke="#087eb8" stroke-width="3"/>
+                  <path d="M150 421 L170 365 L237 355 L268 416Z" fill="url(#metal)" stroke="#1979ae" stroke-width="3"/>
+                  <path d="M195 365 L168 300 L208 273 L247 327 L237 355Z" fill="url(#metal)" stroke="#258ec5" stroke-width="4"/>
+                  <circle cx="188" cy="300" r="26" fill="#07172e" stroke="#00cfff" stroke-width="5"/><circle cx="188" cy="300" r="11" fill="#00dfff" filter="url(#glow)"/>
+                  <path d="M208 278 L255 220 L289 235 L247 327Z" fill="url(#metal)" stroke="#258ec5" stroke-width="4"/>
+                  <circle cx="270" cy="228" r="22" fill="#07172e" stroke="#00cfff" stroke-width="5"/><circle cx="270" cy="228" r="8" fill="#00dfff" filter="url(#glow)"/>
+                  <path d="M287 230 L330 252 L350 238 L326 215 L302 211Z" fill="url(#metal)" stroke="#258ec5" stroke-width="4"/>
+                  <path d="M348 237 L367 225 L379 232 L368 249 L355 250Z" fill="#5d91b7" stroke="#00cfff" stroke-width="3"/>
+                  <path d="M374 230 L388 220 M374 239 L390 244" stroke="#00dfff" stroke-width="5"/>
+                </g>
+                <g fill="#00dfff" opacity=".85" filter="url(#glow)"><circle cx="95" cy="330" r="3"/><circle cx="320" cy="370" r="2.5"/><circle cx="585" cy="310" r="3"/><circle cx="660" cy="355" r="2"/></g>
+              </svg>
+            </div>
+            <h1>Predict<span>AI</span></h1>
+            <div class="login-tagline">SMARTER MACHINES&nbsp; • &nbsp;SAFER TOMORROW</div>
+            ''', unsafe_allow_html=True)
     with right:
         with st.container(key="login_right_panel"):
             st.markdown("## 🔐 Secure Sign In")
@@ -112,11 +163,7 @@ if not st.session_state.predictai_authenticated:
                     st.rerun()
                 else:
                     st.error("Username or password is incorrect. Please try again.")
-            st.markdown(
-                "<p class='login-note'>Demo login: <b>admin</b> · <b>PredictAI@123</b><br>"
-                "Change these using Streamlit Secrets before sharing your app publicly.</p>",
-                unsafe_allow_html=True,
-            )
+            st.markdown("<p class='login-note'>Authorized users only</p>", unsafe_allow_html=True)
     st.stop()
 
 # ---------- Existing project settings ----------
