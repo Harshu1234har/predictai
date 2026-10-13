@@ -26,9 +26,9 @@ st.set_page_config(
 )
 
 # ---------- Existing project settings ----------
-MODEL_PATH = "model/machine_failure_model.pkl"
-ENCODER_PATH = "model/type_encoder.pkl"
-FEATURES_PATH = "model/features.pkl"
+MODEL_PATH = "machine_failure_model.pkl"
+ENCODER_PATH = "type_encoder.pkl"
+FEATURES_PATH = "features.pkl"
 
 FEATURES = [
     "Air temperature [K]",
