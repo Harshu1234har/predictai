@@ -65,14 +65,14 @@ if not st.session_state.predictai_authenticated:
       position:relative; isolation:isolate;
     }
     .factory-art {
-      position:absolute; inset:30% 0 0 0; z-index:-1; opacity:.96; pointer-events:none;
+      position:absolute; inset:30% 0 0 0; z-index:0; opacity:.96; pointer-events:none;
       background:linear-gradient(180deg,transparent 0%,rgba(0,15,39,.05) 28%,rgba(0,12,32,.2) 100%);
     }
     .factory-art svg { width:100%; height:100%; display:block; }
     .login-tagline { color:#8eeeff; font-size:clamp(.78rem,1.3vw,1rem); letter-spacing:.18em; font-weight:600; margin-top:16px; position:relative; z-index:2; }
-    .st-key-login_left_panel h1 { text-shadow:0 0 28px rgba(0,211,255,.12); }
+    .st-key-login_left_panel h1 { text-shadow:0 0 28px rgba(0,211,255,.12); position:relative; z-index:2; }
     .st-key-login_left_panel:before {
-      content:""; position:absolute; left:-10%; right:-10%; bottom:7%; height:32%;
+      content:""; position:absolute; z-index:1; left:-10%; right:-10%; bottom:7%; height:32%;
       background:repeating-linear-gradient(0deg, transparent 0 28px, rgba(0,201,255,.12) 29px 30px),
                  repeating-linear-gradient(90deg, transparent 0 48px, rgba(0,201,255,.12) 49px 50px);
       transform:perspective(280px) rotateX(58deg); transform-origin:bottom; opacity:.8;
