@@ -13,9 +13,9 @@ import matplotlib.pyplot as plt
 # PredictAI — Machine Predictive Maintenance Dashboard
 # Uses the existing trained model and feature order.
 # Put these files in your GitHub repository:
-#   model/machine_failure_model.pkl
-#   model/type_encoder.pkl
-#   model/features.pkl
+#   machine_failure_model.pkl
+#   type_encoder.pkl
+#   features.pkl
 # ============================================================
 
 st.set_page_config(
@@ -65,17 +65,12 @@ if not st.session_state.predictai_authenticated:
       position:relative; isolation:isolate;
     }
     .factory-art {
-      position:absolute; left:0; right:0; top:29%; bottom:0; height:71%;
-      z-index:0; opacity:1; pointer-events:none; overflow:hidden;
-      background:linear-gradient(180deg,rgba(3,20,47,.03) 0%,rgba(0,15,39,.05) 28%,rgba(0,12,32,.2) 100%);
+      position:absolute; inset:30% 0 0 0; z-index:0; opacity:.96; pointer-events:none;
+      background:linear-gradient(180deg,transparent 0%,rgba(0,15,39,.05) 28%,rgba(0,12,32,.2) 100%);
     }
-    .factory-art svg { position:absolute; inset:0; width:100%; height:100%; min-height:420px; display:block; overflow:visible; }
-    .st-key-login_left_panel > div { position:relative; z-index:2; }
-    .st-key-login_left_panel [data-testid="stMarkdown"] { position:relative; z-index:2; }
-    .st-key-login_left_panel .factory-art { z-index:0; }
-    .st-key-login_left_panel .factory-art svg { z-index:0; }
-    .login-tagline { color:#8eeeff; font-size:clamp(.78rem,1.3vw,1rem); letter-spacing:.18em; font-weight:600; margin-top:16px; position:relative; z-index:3; }
-    .st-key-login_left_panel h1 { text-shadow:0 0 28px rgba(0,211,255,.12); position:relative; z-index:3; }
+    .factory-art svg { width:100%; height:100%; display:block; }
+    .login-tagline { color:#8eeeff; font-size:clamp(.78rem,1.3vw,1rem); letter-spacing:.18em; font-weight:600; margin-top:16px; position:relative; z-index:2; }
+    .st-key-login_left_panel h1 { text-shadow:0 0 28px rgba(0,211,255,.12); position:relative; z-index:2; }
     .st-key-login_left_panel:before {
       content:""; position:absolute; z-index:1; left:-10%; right:-10%; bottom:7%; height:32%;
       background:repeating-linear-gradient(0deg, transparent 0 28px, rgba(0,201,255,.12) 29px 30px),
@@ -88,7 +83,7 @@ if not st.session_state.predictai_authenticated:
       border:1px solid rgba(0,216,255,.42); border-radius:50%;
       box-shadow:0 0 25px rgba(0,190,255,.12), inset 0 0 30px rgba(0,190,255,.08);
     }
-    .st-key-login_left_panel h1 { color:#fff; font-size:clamp(2.8rem,5vw,4.5rem); line-height:1.05; letter-spacing:-2px; font-weight:800; margin:0; position:relative; z-index:3; }
+    .st-key-login_left_panel h1 { color:#fff; font-size:clamp(2.8rem,5vw,4.5rem); line-height:1.05; letter-spacing:-2px; font-weight:800; margin:0; position:relative; z-index:1; }
     .st-key-login_left_panel h1 span { color:#12d5ff; }
     .st-key-login_right_panel { min-height:min(76vh,700px); display:flex; flex-direction:column; justify-content:center; padding:clamp(8px,2vw,28px); }
     .st-key-login_right_panel h2 { color:#f4f8ff !important; text-align:center; font-size:clamp(1.6rem,2.5vw,2.2rem); }
@@ -103,7 +98,7 @@ if not st.session_state.predictai_authenticated:
     @media (max-width: 800px) {
       [data-testid="stMainBlockContainer"] { padding-left:1rem; padding-right:1rem; }
       .st-key-login_left_panel { min-height:260px; padding:28px 22px; }
-      .factory-art { top:34%; bottom:0; height:66%; }
+      .factory-art { inset:34% 0 0 0; }
       .st-key-login_left_panel:after { width:100px; height:100px; right:7%; bottom:12%; }
       .st-key-login_right_panel { min-height:auto; padding:18px 0 8px; }
     }
@@ -172,9 +167,9 @@ if not st.session_state.predictai_authenticated:
     st.stop()
 
 # ---------- Existing project settings ----------
-MODEL_PATH = "model/machine_failure_model.pkl"
-ENCODER_PATH = "model/type_encoder.pkl"
-FEATURES_PATH = "model/features.pkl"
+MODEL_PATH = "machine_failure_model.pkl"
+ENCODER_PATH = "type_encoder.pkl"
+FEATURES_PATH = "features.pkl"
 
 FEATURES = [
     "Air temperature [K]",
@@ -454,7 +449,7 @@ if page == "Overview":
     render_hero("Machine Health Overview", "A clear view of machine condition, failure probability, and model performance.", "🛰️")
     if load_error:
         st.error(f"Model loading issue: {load_error}")
-        st.info("Check that the three model files are committed to the repository in the model/ folder.")
+        st.info("Check that machine_failure_model.pkl, type_encoder.pkl, and features.pkl are committed in the repository root (same level as app.py).")
     latest = st.session_state.last_prediction
     if latest:
         status = latest["prediction"]
@@ -723,7 +718,7 @@ elif page == "About Project":
     - Predictions support learning and should not replace inspection or a qualified maintenance process.
     """)
     st.markdown("### Model files")
-    st.code("model/machine_failure_model.pkl\nmodel/type_encoder.pkl\nmodel/features.pkl")
+    st.code("machine_failure_model.pkl\ntype_encoder.pkl\nfeatures.pkl")
 
 # Small footer
 st.markdown("---")
