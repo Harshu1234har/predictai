@@ -46,64 +46,56 @@ if "predictai_authenticated" not in st.session_state:
     st.session_state.predictai_authenticated = False
 
 if not st.session_state.predictai_authenticated:
-    st.markdown("""
+    # Background artwork is embedded in this file; no separate image upload is needed.
+    LOGIN_BG = "data:image/png;base64,"
+    st.markdown(f"""
     <style>
-    [data-testid="stAppViewContainer"] {
-        background:
-          radial-gradient(circle at 15% 15%, rgba(49,199,213,.18), transparent 28%),
-          radial-gradient(circle at 90% 85%, rgba(71,118,230,.18), transparent 30%),
-          linear-gradient(135deg,#08142d 0%,#10244b 55%,#0a1936 100%);
-    }
-    [data-testid="stHeader"] { background: transparent; }
-    .login-wrap {
-        max-width: 980px; margin: 6vh auto 2vh auto; padding: 26px;
-        border: 1px solid rgba(255,255,255,.16); border-radius: 28px;
-        background: rgba(255,255,255,.06);
-        box-shadow: 0 24px 70px rgba(0,0,0,.22);
-    }
-    .login-title { color:#fff; font-size:2.55rem; font-weight:800; letter-spacing:-1px; }
-    .login-subtitle { color:#c8d8f7; font-size:1.02rem; line-height:1.6; }
-    .login-kicker { color:#57e2e7; font-size:.78rem; font-weight:800; letter-spacing:3px; }
-    .login-feature {
-        color:#eaf1ff; border:1px solid rgba(255,255,255,.14);
-        background:rgba(255,255,255,.055); border-radius:14px;
-        padding:13px 15px; margin:10px 0; font-size:.95rem;
-    }
-    [data-testid="stForm"] {
-        border:1px solid rgba(255,255,255,.15); border-radius:20px;
-        padding:24px; background:rgba(7,18,42,.55);
-    }
-    [data-testid="stForm"] label, [data-testid="stForm"] p { color:#eaf1ff !important; }
-    [data-testid="stForm"] input { background:#f8fbff; color:#102044; }
-    .login-note { color:#aebfdf; font-size:.82rem; }
+    [data-testid="stAppViewContainer"] {{ background: #03132e; }}
+    [data-testid="stHeader"] {{ background: transparent; }}
+    [data-testid="stMain"] > div {{ padding-top: 2rem; }}
+    .login-left {{
+        min-height: 610px; height: 72vh; max-height: 760px;
+        border: 1px solid rgba(0,210,255,.42); border-radius: 24px;
+        overflow: hidden; display:flex; align-items:flex-start;
+        padding: 55px 34px;
+        background-image: linear-gradient(90deg, rgba(2,13,34,.08), rgba(2,13,34,.1)), url('{LOGIN_BG}');
+        background-size: auto 100%; background-position: left center; background-repeat:no-repeat;
+        box-shadow: 0 18px 60px rgba(0,0,0,.28);
+    }}
+    .login-heading {{ color:#fff; font-size:clamp(2.4rem,4vw,4.2rem); line-height:1.05;
+        font-weight:800; letter-spacing:-2px; text-shadow:0 3px 22px rgba(0,0,0,.45); }}
+    .login-heading span {{ color:#12d5ff; }}
+    .login-right {{ min-height:610px; height:72vh; max-height:760px; display:flex;
+        flex-direction:column; justify-content:center; padding:26px 18px; }}
+    .login-right h2 {{ color:#f4f8ff !important; text-align:center; }}
+    .login-right p {{ color:#a9bfdc; }}
+    [data-testid="stForm"] {{ border:1px solid rgba(0,196,255,.45); border-radius:20px;
+        padding:24px; background:rgba(3,19,46,.88); box-shadow:0 12px 38px rgba(0,0,0,.25); }}
+    [data-testid="stForm"] label {{ color:#f3f7ff !important; }}
+    [data-testid="stForm"] input {{ background:#102747; color:#fff; border:1px solid #147fc0; }}
+    [data-testid="stForm"] button[kind="primaryFormSubmit"] {{
+        background:linear-gradient(90deg,#247bff,#00d4e9); color:white; border:0;
+        border-radius:10px; min-height:48px; font-weight:700; }}
+    .login-note {{ color:#a9bfdc; font-size:.82rem; line-height:1.6; }}
+    @media (max-width: 800px) {{
+        .login-left {{ min-height:260px; height:32vh; padding:30px 22px; background-size:auto 100%; }}
+        .login-right {{ min-height:auto; height:auto; padding:10px 0; }}
+    }}
     </style>
     """, unsafe_allow_html=True)
 
-    left, right = st.columns([1.15, 0.85], gap="large")
+    left, right = st.columns([1.05, 0.95], gap="large")
     with left:
         st.markdown("""
-        <div class="login-wrap">
-          <div class="login-kicker">PREDICTIVE INTELLIGENCE PLATFORM</div>
-          <div class="login-title">PredictAI<br>Mission Control</div>
-          <p class="login-subtitle">
-            Machine health intelligence in one workspace. Sign in to access
-            failure prediction, factory monitoring demos, model performance, sensor trends and reports.
-          </p>
-          <div class="login-feature">🧠 &nbsp; ML-powered failure probability</div>
-          <div class="login-feature">🏭 &nbsp; Factory Mission Control demo</div>
-                    <div class="login-feature">📊 &nbsp; Model metrics and confusion matrix</div>
-          <div class="login-feature">🔔 &nbsp; Alert history and downloadable reports</div>
-        </div>
+        <div class="login-left"><div class="login-heading">Predict<span>AI</span></div></div>
         """, unsafe_allow_html=True)
     with right:
-        st.markdown("<div style='height:8vh'></div>", unsafe_allow_html=True)
-        st.markdown("## 🔐 Secure sign in")
-        st.caption("Use the credentials configured for your PredictAI app.")
+        st.markdown('<div class="login-right">', unsafe_allow_html=True)
+        st.markdown("## 🔐 Secure Sign In")
         with st.form("predictai_login_form", clear_on_submit=False):
             login_username = st.text_input("Username", placeholder="Enter username")
             login_password = st.text_input("Password", type="password", placeholder="Enter password")
-            login_submit = st.form_submit_button("Sign in to PredictAI", type="primary", use_container_width=True)
-
+            login_submit = st.form_submit_button("Sign In to PredictAI", type="primary", use_container_width=True)
         if login_submit:
             expected_username, expected_password = get_login_credentials()
             if login_username.strip() == expected_username and login_password == expected_password:
@@ -111,14 +103,12 @@ if not st.session_state.predictai_authenticated:
                 st.rerun()
             else:
                 st.error("Username or password is incorrect. Please try again.")
-
         st.markdown(
-            "<p class='login-note'>Demo fallback: username <b>admin</b> · password <b>PredictAI@123</b>"
-            "<br>Change these using Streamlit Secrets before sharing your app publicly.</p>",
+            "<p class='login-note'>Demo login: <b>admin</b> · <b>PredictAI@123</b><br>"
+            "Change these using Streamlit Secrets before sharing your app publicly.</p></div>",
             unsafe_allow_html=True,
         )
     st.stop()
-
 
 # ---------- Existing project settings ----------
 MODEL_PATH = "model/machine_failure_model.pkl"
